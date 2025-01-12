@@ -6,7 +6,7 @@ import re
 import csv
 import pandas as pd
 
-# [('type', 'HKQuantityTypeIdentifierHeartRate'), ('sourceName', 'Abigail’s Apple\xa0Watch'), ('sourceVersion', '10.5'), ('device', '<<HKDevice: 0x3027f64e0>, name:Apple Watch, manufacturer:Apple Inc., model:Watch, hardware:Watch6,10, software:10.5, creation date:2024-07-05 09:25:20 +0000>'), ('unit', 'count/min'), ('creationDate', '2024-11-01 05:33:18 -0800'), ('startDate', '2024-11-01 05:25:46 -0800'), ('endDate', '2024-11-01 05:25:46 -0800'), ('value', '65')]
+
 class Health_Parser:
 
     PATH_TO_XML = "/Users/abigailcalderon/Downloads/apple_health_export/export.xml"
@@ -15,30 +15,47 @@ class Health_Parser:
         self.tree = ET.parse(self.PATH_TO_XML)
         self.root = self.tree.getroot()
         self.get_all_types()
-
-    # creates a seperate csv for each selected type
-    def create_csv(self,selection):
-        records = self.get_selected_type(selection)
-
-        # using pandas just for this method right now. may integrate pandas into 
-        # other methods later
+        
+    def create_csv(self):
+        records = []
+        self.type_values = set()
+        for record in self.root.findall('.//Record'):
+            type_attribute = record.get('type')
+            
+            if type_attribute:
+                identifier = self.extract_identifier_from_type(record.get('type'))
+                records.append({
+                'type':type_attribute,
+                'type_name':identifier,
+                'start_date': record.get('startDate'),
+                'end_date': record.get('endDate'),
+                'value': record.get('value'),
+                'unit': record.get('unit'),
+            })
+        # print(len(records))
+        # pprint.pprint(records[:10])
         df = pd.DataFrame(records) 
-        type_str = str(self.type_dict[selection])
-        identifier = self.extract_identifier(type_str)
-        csv_filename = "apple_health"+identifier+".csv"
+        csv_filename = "apple_health.csv"
         df.to_csv(csv_filename, index=False)
         print(f"{csv_filename} created")
-        
-        
 
-    def extract_identifier(self,type_str):
-        pattern = r"[\w]+Identifier(.*)"
+
+
+    def extract_identifier(self,selection):
+        type_str = str(self.type_dict[selection])
+        pattern = r"[\w]+Type(?:Identifier)?(.*)"
+        match = re.search(pattern,type_str)
+        result = match.group(1)
+        return result
+    
+    def extract_identifier_from_type(self,type):
+        type_str = str(type)
+        pattern = r"[\w]+Type(?:Identifier)?(.*)"
         match = re.search(pattern,type_str)
         result = match.group(1)
         return result
 
         
-
     def get_all_types(self):
         self.type_values = set()
         for record in self.root.findall('.//Record'):
@@ -53,8 +70,7 @@ class Health_Parser:
     def get_selected_type(self,selection):
         print(f'Showing data for {self.type_dict[selection]}')
         records = []
-        type_str = str(self.type_dict[selection])
-        identifier = self.extract_identifier(type_str)
+        identifier = self.extract_identifier(selection)
         selected_type = ".//Record[@type='"+self.type_dict[selection]+"']"
         for record in self.root.findall(selected_type):
             # print(record.items())
@@ -66,7 +82,7 @@ class Health_Parser:
                 'value': record.get('value'),
                 'unit': record.get('unit'),
             })
-        print(len(records))
+        # print(len(records))
         pprint.pprint(records[:10])
         return records
 
@@ -87,15 +103,13 @@ class Health_Parser:
                 date_obj= datetime.strptime(start_date, '%Y-%m-%d %H:%M:%S %z')
                 records.append((date_obj, value))
                 unit = record.get("unit")
-            #print(records)
-            #pprint.pprint(records[:10])
+
     
             records.sort(key=lambda x: x[0])
             #print("sorted ",records)
             dates = []
             cumulative_val = []
             total = []
-            count = 1
             prev_date = None
 
             for record in records:
@@ -143,8 +157,7 @@ def main():
                 user_selection = int(input("Enter index of type: "))
                 healthParser.graph_selected_type(user_selection)
             case 3:
-                user_selection = int(input("Enter index of type: "))
-                healthParser.create_csv(user_selection)
+                healthParser.create_csv()
             case 4:
                 running = False
 
